@@ -1,0 +1,67 @@
+name: Test Package Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    
+    steps:
+      - name: Update system
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm base-devel git
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create build user
+        run: |
+          useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          chown -R builder:builder .
+
+      - name: Install dependencies
+        run: |
+          pacman -S --noconfirm qt6-base qt6-svg qt6-tools cmake ninja kguiaddons hicolor-icon-theme
+
+      - name: Test PKGBUILD
+        run: |
+          su builder -c "makepkg --syncdeps --noconfirm --nobuild"
+          echo "✅ PKGBUILD is valid and dependencies resolved"
+
+      - name: Build package
+        run: |
+          su builder -c "makepkg --syncdeps --noconfirm"
+          echo "✅ Package built successfully"
+
+      - name: Check package contents
+        run: |
+          PACKAGE=$(ls *.pkg.tar.*)
+          echo "Package created: $PACKAGE"
+          tar -tvf "$PACKAGE" | head -20
+          
+          # Check if imgur functionality is included
+          mkdir -p /tmp/extract
+          tar -xf "$PACKAGE" -C /tmp/extract
+          if strings /tmp/extract/usr/bin/flameshot | grep -q "imgur"; then
+            echo "✅ Imgur functionality appears to be included"
+          else
+            echo "⚠️  Warning: Could not verify Imgur functionality in binary"
+          fi
+
+      - name: Validate .SRCINFO
+        run: |
+          su builder -c "makepkg --printsrcinfo > .SRCINFO.test"
+          if diff -q .SRCINFO .SRCINFO.test > /dev/null 2>&1; then
+            echo "✅ .SRCINFO is up to date"
+          else
+            echo "⚠️  .SRCINFO needs updating"
+            diff .SRCINFO .SRCINFO.test || true
+          fi
