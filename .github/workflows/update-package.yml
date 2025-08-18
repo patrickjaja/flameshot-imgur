@@ -10,25 +10,15 @@ jobs:
   check-and-update:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout main branch
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: main
-
-      - name: Checkout aur branch
-        run: |
-          git fetch origin aur:aur || echo "No aur branch yet"
-          git worktree add aur-branch aur || git worktree add -b aur aur-branch
 
       - name: Get current package version
         id: current
         run: |
-          if [ -f aur-branch/PKGBUILD ]; then
-            CURRENT_VERSION=$(grep "^pkgver=" aur-branch/PKGBUILD | cut -d'=' -f2)
-          else
-            CURRENT_VERSION="0.0.0"
-          fi
+          CURRENT_VERSION=$(grep "^pkgver=" PKGBUILD | cut -d'=' -f2)
           echo "version=${CURRENT_VERSION}" >> $GITHUB_OUTPUT
           echo "Current version: ${CURRENT_VERSION}"
 
@@ -50,70 +40,26 @@ jobs:
             echo "No update needed, already at version ${{ steps.current.outputs.version }}"
           fi
 
-      - name: Create/Update PKGBUILD
+      - name: Update PKGBUILD version
         if: steps.check.outputs.update_needed == 'true'
         run: |
-          cd aur-branch
+          # Update version
+          sed -i "s/^pkgver=.*/pkgver=${{ steps.latest.outputs.version }}/" PKGBUILD
+          
+          # Reset pkgrel to 1 for new version
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
           
           # Download and get SHA256
           wget -q "https://github.com/flameshot-org/flameshot/archive/v${{ steps.latest.outputs.version }}.tar.gz"
           SHA256=$(sha256sum "v${{ steps.latest.outputs.version }}.tar.gz" | cut -d' ' -f1)
+          sed -i "s/^sha256sums=.*/sha256sums=('${SHA256}')/" PKGBUILD
           rm "v${{ steps.latest.outputs.version }}.tar.gz"
           
-          # Create PKGBUILD
-          cat > PKGBUILD << 'EOF'
-# Maintainer: patrickjaja <patrickjajaa@gmail.com>
-
-pkgname=flameshot-imgur
-_pkgname=flameshot
-pkgver=${{ steps.latest.outputs.version }}
-pkgrel=1
-pkgdesc="Powerful yet simple to use screenshot software with Imgur upload support enabled"
-arch=('i686' 'x86_64' 'aarch64' 'armv7h')
-url="https://github.com/flameshot-org/flameshot"
-license=('GPL-3.0-or-later')
-depends=('qt6-base' 'qt6-svg' 'hicolor-icon-theme' 'kguiaddons')
-makedepends=('qt6-tools' 'cmake' 'ninja')
-optdepends=(
-    'gnome-shell-extension-appindicator: for system tray icon if you are using Gnome'
-    'grim: for wlroots wayland support'
-    'xdg-desktop-portal: for wayland support, you will need the implementation for your wayland desktop environment'
-    'qt6-imageformats: for additional export image formats (e.g. tiff, webp, and more)'
-)
-provides=('flameshot')
-conflicts=('flameshot' 'flameshot-git' 'flameshot-imgur-git')
-source=("$_pkgname-$pkgver.tar.gz::https://github.com/flameshot-org/flameshot/archive/v${pkgver}.tar.gz")
-sha256sums=('SHA256_PLACEHOLDER')
-
-build() {
-    cd "${srcdir}/${_pkgname}-${pkgver}"
-
-    cmake -GNinja -B build -S . \
-        -DCMAKE_BUILD_TYPE=None \
-        -DCMAKE_INSTALL_PREFIX=/usr \
-        -DUSE_WAYLAND_CLIPBOARD=1 \
-        -DDISABLE_UPDATE_CHECKER=1 \
-        -DENABLE_IMGUR=ON
-
-    cmake --build build
-}
-
-package() {
-    cd "${srcdir}/${_pkgname}-${pkgver}"
-    DESTDIR="${pkgdir}" cmake --install build
-}
-EOF
-          
-          # Replace SHA256 placeholder
-          sed -i "s/SHA256_PLACEHOLDER/${SHA256}/" PKGBUILD
-          
-          echo "Created PKGBUILD for version ${{ steps.latest.outputs.version }}"
+          echo "Updated PKGBUILD to version ${{ steps.latest.outputs.version }}"
 
       - name: Generate .SRCINFO
         if: steps.check.outputs.update_needed == 'true'
         run: |
-          cd aur-branch
-          
           # Use Docker to generate .SRCINFO with Arch Linux environment
           docker run --rm -v "$PWD":/pkg archlinux:latest bash -c "
             pacman -Sy --noconfirm base-devel &&
@@ -122,49 +68,19 @@ EOF
             su nobody -s /bin/bash -c 'makepkg --printsrcinfo' > .SRCINFO
           "
 
-      - name: Create .gitignore for AUR branch
+      - name: Commit and push to GitHub
         if: steps.check.outputs.update_needed == 'true'
         run: |
-          cd aur-branch
-          cat > .gitignore << 'EOF'
-# Build directories
-src/
-pkg/
-build/
-
-# Source archives
-*.tar.gz
-*.tar.xz
-*.tar.bz2
-*.zip
-
-# Compiled packages
-*.pkg.tar*
-
-# Log files
-*.log
-
-# Backup files
-*~
-*.bak
-*.orig
-EOF
-
-      - name: Commit and push AUR branch to GitHub
-        if: steps.check.outputs.update_needed == 'true'
-        run: |
-          cd aur-branch
-          
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           
-          git add PKGBUILD .SRCINFO .gitignore
+          git add PKGBUILD .SRCINFO
           git commit -m "Update to version ${{ steps.latest.outputs.version }}
 
           Automated update from Flameshot v${{ steps.latest.outputs.version }}
           Release: https://github.com/flameshot-org/flameshot/releases/tag/v${{ steps.latest.outputs.version }}"
           
-          git push origin aur
+          git push origin main
 
       - name: Setup SSH for AUR
         if: steps.check.outputs.update_needed == 'true'
@@ -183,13 +99,38 @@ EOF
       - name: Push to AUR
         if: steps.check.outputs.update_needed == 'true'
         run: |
-          cd aur-branch
+          # Clone the existing AUR repo
+          git clone ssh://aur@aur.archlinux.org/flameshot-imgur.git aur-temp || {
+            # If repo doesn't exist on AUR, create it
+            mkdir aur-temp
+            cd aur-temp
+            git init
+            git remote add origin ssh://aur@aur.archlinux.org/flameshot-imgur.git
+            cd ..
+          }
           
-          # Add AUR remote if not exists
-          git remote add aur ssh://aur@aur.archlinux.org/flameshot-imgur.git 2>/dev/null || true
+          # Copy ONLY the files AUR allows (no subdirectories)
+          cp PKGBUILD .SRCINFO aur-temp/
+          cp .gitignore aur-temp/ 2>/dev/null || true
           
-          # Push only the aur branch content to AUR's master
-          git push aur aur:master --force
+          # Go to AUR temp directory
+          cd aur-temp
+          
+          # Configure git
+          git config user.name "GitHub Actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          
+          # Add and commit if there are changes
+          git add PKGBUILD .SRCINFO
+          [ -f .gitignore ] && git add .gitignore
+          
+          if git diff --staged --quiet; then
+            echo "No changes to push to AUR"
+          else
+            git commit -m "Update to version ${{ steps.latest.outputs.version }}"
+            git push origin master
+            echo "✅ Pushed to AUR successfully"
+          fi
 
       - name: Create GitHub Release
         if: steps.check.outputs.update_needed == 'true'

@@ -28,7 +28,7 @@ paru -S flameshot-imgur
 ### Manual Installation
 
 ```bash
-git clone -b aur https://github.com/patrickjaja/flameshot-imgur.git
+git clone https://github.com/patrickjaja/flameshot-imgur.git
 cd flameshot-imgur
 makepkg -si
 ```
@@ -38,9 +38,9 @@ makepkg -si
 This package is **fully automated** with nightly builds:
 - **Daily at 3 AM UTC**: GitHub Actions checks for new Flameshot releases
 - **When a new version is detected**:
-  - PKGBUILD is regenerated with the latest version and checksums
-  - Updates are committed to the `aur` branch
-  - The `aur` branch is pushed directly to AUR's master
+  - PKGBUILD is updated with the latest version and checksums
+  - Changes are committed to the main branch
+  - A separate clone pushes only PKGBUILD/.SRCINFO to AUR (avoiding subdirectory issues)
   - A GitHub release is created for tracking
 - **Users receive updates** through their AUR helpers automatically within 24 hours
 
@@ -69,27 +69,20 @@ If you need to manually trigger an update:
 
 ### Repository Structure
 
-This repository uses a **dual-branch strategy** to comply with AUR requirements:
-
-#### `main` branch (GitHub default)
 ```
+flameshot-imgur/
 ├── .github/
 │   └── workflows/
 │       ├── update-package.yml    # Daily auto-update workflow (3 AM UTC)
 │       └── test-build.yml        # Build testing on push
+├── PKGBUILD                       # Arch package build script
+├── .SRCINFO                       # AUR metadata (auto-generated)
 ├── update-version.sh              # Manual update script
 ├── .gitignore
 └── README.md                      # This file
 ```
 
-#### `aur` branch (AUR deployment)
-```
-├── PKGBUILD                       # Arch package build script
-├── .SRCINFO                       # AUR metadata
-└── .gitignore                     # Build artifacts exclusion
-```
-
-The separation ensures AUR's "no subdirectories" requirement is met while maintaining GitHub Actions automation.
+The GitHub Action handles AUR's "no subdirectories" requirement by cloning AUR separately and copying only PKGBUILD/.SRCINFO files.
 
 ## 📝 Using Imgur Upload
 
