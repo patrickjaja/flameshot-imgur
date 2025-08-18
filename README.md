@@ -28,20 +28,21 @@ paru -S flameshot-imgur
 ### Manual Installation
 
 ```bash
-git clone https://github.com/patrickjaja/flameshot-imgur.git
+git clone -b aur https://github.com/patrickjaja/flameshot-imgur.git
 cd flameshot-imgur
 makepkg -si
 ```
 
 ## 🔄 Automatic Updates
 
-This package is **automatically maintained**:
-- GitHub Actions checks for new Flameshot releases daily at 3 AM UTC
-- When a new version is detected:
-  - PKGBUILD is updated with new version and checksums
-  - Changes are pushed to both GitHub and AUR
-  - A GitHub release is created
-- Users receive updates through their AUR helpers automatically
+This package is **fully automated** with nightly builds:
+- **Daily at 3 AM UTC**: GitHub Actions checks for new Flameshot releases
+- **When a new version is detected**:
+  - PKGBUILD is regenerated with the latest version and checksums
+  - Updates are committed to the `aur` branch
+  - The `aur` branch is pushed directly to AUR's master
+  - A GitHub release is created for tracking
+- **Users receive updates** through their AUR helpers automatically within 24 hours
 
 ## 📊 Package Comparison
 
@@ -68,23 +69,27 @@ If you need to manually trigger an update:
 
 ### Repository Structure
 
+This repository uses a **dual-branch strategy** to comply with AUR requirements:
+
+#### `main` branch (GitHub default)
 ```
-flameshot-imgur/
 ├── .github/
 │   └── workflows/
-│       ├── update-package.yml    # Daily auto-update workflow
+│       ├── update-package.yml    # Daily auto-update workflow (3 AM UTC)
 │       └── test-build.yml        # Build testing on push
-├── PKGBUILD                       # Arch package build script
-├── .SRCINFO                       # AUR metadata
 ├── update-version.sh              # Manual update script
+├── .gitignore
 └── README.md                      # This file
 ```
 
-### Required GitHub Secrets
+#### `aur` branch (AUR deployment)
+```
+├── PKGBUILD                       # Arch package build script
+├── .SRCINFO                       # AUR metadata
+└── .gitignore                     # Build artifacts exclusion
+```
 
-To enable automatic AUR updates, configure these secrets in your GitHub repository:
-- `AUR_SSH_PRIVATE_KEY`: Your SSH private key for AUR
-- `AUR_USER`: Your AUR username
+The separation ensures AUR's "no subdirectories" requirement is met while maintaining GitHub Actions automation.
 
 ## 📝 Using Imgur Upload
 
