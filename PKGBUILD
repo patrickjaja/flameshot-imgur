@@ -18,6 +18,7 @@ optdepends=(
 )
 provides=('flameshot')
 conflicts=('flameshot' 'flameshot-git' 'flameshot-imgur-git')
+options=('!debug')
 source=("$_pkgname-$pkgver.tar.gz::https://github.com/flameshot-org/flameshot/archive/v${pkgver}.tar.gz")
 sha256sums=('1d755a618bdcb3e739f691cea55ed2d432f93e521a504f95b74abed0c595f6f7')
 
