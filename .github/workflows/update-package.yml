@@ -57,16 +57,28 @@ jobs:
           
           echo "Updated PKGBUILD to version ${{ steps.latest.outputs.version }}"
 
+
       - name: Generate .SRCINFO
         if: steps.check.outputs.update_needed == 'true'
         run: |
-          # Use Docker to generate .SRCINFO with Arch Linux environment
           docker run --rm -v "$PWD":/pkg archlinux:latest bash -c "
             pacman -Sy --noconfirm base-devel &&
+            useradd -m -G wheel builduser &&
             cd /pkg &&
-            chown -R nobody:nobody . &&
-            su nobody -s /bin/bash -c 'makepkg --printsrcinfo' > .SRCINFO
+            chown -R builduser:builduser . &&
+            su - builduser -c 'cd /pkg && makepkg --printsrcinfo' > .SRCINFO
           "
+
+    #  - name: Generate .SRCINFO
+     #   if: steps.check.outputs.update_needed == 'true'
+       # run: |
+          # Use Docker to generate .SRCINFO with Arch Linux environment
+       #   docker run --rm -v "$PWD":/pkg archlinux:latest bash -c "
+      #      pacman -Sy --noconfirm base-devel &&
+         #   cd /pkg &&
+         #   chown -R nobody:nobody . &&
+         #   su nobody -s /bin/bash -c 'makepkg --printsrcinfo' > .SRCINFO
+       #   "
 
       - name: Commit and push to GitHub
         if: steps.check.outputs.update_needed == 'true'
