@@ -68,6 +68,9 @@ jobs:
             chown -R builduser:builduser . &&
             su - builduser -c 'cd /pkg && makepkg --printsrcinfo' > .SRCINFO
           "
+          # Fix ownership back to the runner user
+          sudo chown -R $(id -u):$(id -g) .
+
 
     #  - name: Generate .SRCINFO
      #   if: steps.check.outputs.update_needed == 'true'
