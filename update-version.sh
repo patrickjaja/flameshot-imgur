@@ -34,8 +34,9 @@ sed -i "s/^pkgver=.*/pkgver=$LATEST_VERSION/" PKGBUILD
 sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
 
 # Download tarball and calculate SHA256
+# Use explicit refs/tags/ path to avoid ambiguity if branch with same name exists
 echo "⬇️  Downloading source tarball..."
-wget -q "https://github.com/flameshot-org/flameshot/archive/v${LATEST_VERSION}.tar.gz"
+wget -q "https://github.com/flameshot-org/flameshot/archive/refs/tags/v${LATEST_VERSION}.tar.gz"
 SHA256=$(sha256sum "v${LATEST_VERSION}.tar.gz" | cut -d' ' -f1)
 rm "v${LATEST_VERSION}.tar.gz"
 

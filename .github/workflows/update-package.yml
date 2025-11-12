@@ -75,15 +75,16 @@ jobs:
           sleep 5
 
           # Download tarball twice to verify consistency
+          # Use explicit refs/tags/ path to avoid ambiguity if branch with same name exists
           echo "Downloading tarball (attempt 1)..."
-          wget -q "https://github.com/flameshot-org/flameshot/archive/v${{ steps.latest.outputs.version }}.tar.gz" -O v${{ steps.latest.outputs.version }}-1.tar.gz
+          wget -q "https://github.com/flameshot-org/flameshot/archive/refs/tags/v${{ steps.latest.outputs.version }}.tar.gz" -O v${{ steps.latest.outputs.version }}-1.tar.gz
           SHA256_1=$(sha256sum "v${{ steps.latest.outputs.version }}-1.tar.gz" | cut -d' ' -f1)
           echo "SHA256 (attempt 1): ${SHA256_1}"
 
           sleep 2
 
           echo "Downloading tarball (attempt 2)..."
-          wget -q "https://github.com/flameshot-org/flameshot/archive/v${{ steps.latest.outputs.version }}.tar.gz" -O v${{ steps.latest.outputs.version }}-2.tar.gz
+          wget -q "https://github.com/flameshot-org/flameshot/archive/refs/tags/v${{ steps.latest.outputs.version }}.tar.gz" -O v${{ steps.latest.outputs.version }}-2.tar.gz
           SHA256_2=$(sha256sum "v${{ steps.latest.outputs.version }}-2.tar.gz" | cut -d' ' -f1)
           echo "SHA256 (attempt 2): ${SHA256_2}"
 
