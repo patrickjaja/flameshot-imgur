@@ -132,6 +132,13 @@ jobs:
           git config --local user.name "github-actions[bot]"
 
           git add PKGBUILD .SRCINFO
+
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "ℹ️  No changes detected (files already up to date)"
+            exit 0
+          fi
+
           git commit -m "Update to version ${{ steps.latest.outputs.version }}
 
           Automated update from Flameshot v${{ steps.latest.outputs.version }}
