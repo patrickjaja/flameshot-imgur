@@ -5,6 +5,16 @@ on:
     # Runs at 3 AM UTC every day
     - cron: '0 3 * * *'
   workflow_dispatch:  # Allow manual trigger
+    inputs:
+      version:
+        description: 'Flameshot version to update to (e.g., 13.3.0). Leave empty for latest.'
+        required: false
+        type: string
+      force_update:
+        description: 'Force update even if version matches (useful for fixing checksums)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   check-and-update:
@@ -27,14 +37,22 @@ jobs:
       - name: Get latest Flameshot release
         id: latest
         run: |
-          LATEST_VERSION=$(curl -s https://api.github.com/repos/flameshot-org/flameshot/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+          if [ -n "${{ inputs.version }}" ]; then
+            LATEST_VERSION="${{ inputs.version }}"
+            echo "Using manually specified version: ${LATEST_VERSION}"
+          else
+            LATEST_VERSION=$(curl -s https://api.github.com/repos/flameshot-org/flameshot/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+            echo "Latest version from GitHub API: ${LATEST_VERSION}"
+          fi
           echo "version=${LATEST_VERSION}" >> $GITHUB_OUTPUT
-          echo "Latest version: ${LATEST_VERSION}"
 
       - name: Check if update needed
         id: check
         run: |
-          if [ "${{ steps.current.outputs.version }}" != "${{ steps.latest.outputs.version }}" ]; then
+          if [ "${{ inputs.force_update }}" = "true" ]; then
+            echo "update_needed=true" >> $GITHUB_OUTPUT
+            echo "Force update requested for version ${{ steps.latest.outputs.version }}"
+          elif [ "${{ steps.current.outputs.version }}" != "${{ steps.latest.outputs.version }}" ]; then
             echo "update_needed=true" >> $GITHUB_OUTPUT
             echo "Update needed: ${{ steps.current.outputs.version }} -> ${{ steps.latest.outputs.version }}"
           else
@@ -47,17 +65,47 @@ jobs:
         run: |
           # Update version
           sed -i "s/^pkgver=.*/pkgver=${{ steps.latest.outputs.version }}/" PKGBUILD
-          
-          # Reset pkgrel to 1 for new version
-          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
-          
-          # Download and get SHA256
-          wget -q "https://github.com/flameshot-org/flameshot/archive/v${{ steps.latest.outputs.version }}.tar.gz"
-          SHA256=$(sha256sum "v${{ steps.latest.outputs.version }}.tar.gz" | cut -d' ' -f1)
-          sed -i "s/^sha256sums=.*/sha256sums=('${SHA256}')/" PKGBUILD
-          rm "v${{ steps.latest.outputs.version }}.tar.gz"
-          
+
+          # Reset pkgrel to 1 for new version (unless force_update is used)
+          if [ "${{ inputs.force_update }}" != "true" ]; then
+            sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          fi
+
+          echo "Waiting 5 seconds for GitHub to finalize tarball..."
+          sleep 5
+
+          # Download tarball twice to verify consistency
+          echo "Downloading tarball (attempt 1)..."
+          wget -q "https://github.com/flameshot-org/flameshot/archive/v${{ steps.latest.outputs.version }}.tar.gz" -O v${{ steps.latest.outputs.version }}-1.tar.gz
+          SHA256_1=$(sha256sum "v${{ steps.latest.outputs.version }}-1.tar.gz" | cut -d' ' -f1)
+          echo "SHA256 (attempt 1): ${SHA256_1}"
+
+          sleep 2
+
+          echo "Downloading tarball (attempt 2)..."
+          wget -q "https://github.com/flameshot-org/flameshot/archive/v${{ steps.latest.outputs.version }}.tar.gz" -O v${{ steps.latest.outputs.version }}-2.tar.gz
+          SHA256_2=$(sha256sum "v${{ steps.latest.outputs.version }}-2.tar.gz" | cut -d' ' -f1)
+          echo "SHA256 (attempt 2): ${SHA256_2}"
+
+          # Verify checksums match
+          if [ "${SHA256_1}" != "${SHA256_2}" ]; then
+            echo "ERROR: Downloaded tarballs have different checksums!"
+            echo "  First:  ${SHA256_1}"
+            echo "  Second: ${SHA256_2}"
+            echo "This indicates GitHub is regenerating the tarball. Aborting."
+            exit 1
+          fi
+
+          echo "✅ Checksum verification passed: ${SHA256_1}"
+
+          # Update PKGBUILD with verified SHA256
+          sed -i "s/^sha256sums=.*/sha256sums=('${SHA256_1}')/" PKGBUILD
+
+          # Cleanup
+          rm "v${{ steps.latest.outputs.version }}-1.tar.gz" "v${{ steps.latest.outputs.version }}-2.tar.gz"
+
           echo "Updated PKGBUILD to version ${{ steps.latest.outputs.version }}"
+          echo "Verified SHA256: ${SHA256_1}"
 
 
       - name: Generate .SRCINFO
@@ -73,30 +121,23 @@ jobs:
           # Fix ownership back to the runner user
           sudo chown -R $(id -u):$(id -g) .
 
-
-    #  - name: Generate .SRCINFO
-     #   if: steps.check.outputs.update_needed == 'true'
-       # run: |
-          # Use Docker to generate .SRCINFO with Arch Linux environment
-       #   docker run --rm -v "$PWD":/pkg archlinux:latest bash -c "
-      #      pacman -Sy --noconfirm base-devel &&
-         #   cd /pkg &&
-         #   chown -R nobody:nobody . &&
-         #   su nobody -s /bin/bash -c 'makepkg --printsrcinfo' > .SRCINFO
-       #   "
-
       - name: Commit and push to GitHub
         if: steps.check.outputs.update_needed == 'true'
         run: |
+          # Get the SHA256 from PKGBUILD for the commit message
+          SHA256=$(grep "^sha256sums=" PKGBUILD | sed "s/sha256sums=('\(.*\)')/\1/")
+
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          
+
           git add PKGBUILD .SRCINFO
           git commit -m "Update to version ${{ steps.latest.outputs.version }}
 
           Automated update from Flameshot v${{ steps.latest.outputs.version }}
-          Release: https://github.com/flameshot-org/flameshot/releases/tag/v${{ steps.latest.outputs.version }}"
-          
+          Release: https://github.com/flameshot-org/flameshot/releases/tag/v${{ steps.latest.outputs.version }}
+
+          Verified SHA256: ${SHA256}"
+
           git push origin main
 
       - name: Setup SSH for AUR
